@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Expense Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    body {
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 text-gray-800 min-h-screen">
+
+  <div class="container mx-auto py-8">
+
+    <!-- Toast -->
+    <div id="toast" class="fixed top-5 right-5 hidden bg-blue-500 text-white px-4 py-2 rounded shadow-lg"></div>
+
+    <div class="flex justify-between items-center mb-6">
+      <h1 class="text-3xl font-semibold">Expense Tracker</h1>
+      <button onclick="toggleDarkMode()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+        Toggle Dark Mode
+      </button>
+    </div>
+
+    <!-- Budget Input -->
+    <form method="POST" action="/" class="flex items-center space-x-3 mb-6">
+      <label for="max_budget" class="font-medium">Max Budget:</label>
+      <input type="number" name="max_budget" step="0.01" value="{{ budget or '' }}"
+             class="border rounded px-3 py-2 w-32 focus:outline-none focus:ring-2 focus:ring-blue-400" required>
+      <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+        Set Budget
+      </button>
+    </form>
+
+    <!-- Filters -->
+    <div class="mb-6 space-x-3">
+      <button onclick="applyFilter('all')" class="btn-filter bg-gray-300 px-3 py-1 rounded hover:bg-gray-400">All</button>
+      <button onclick="applyFilter('today')" class="btn-filter bg-gray-300 px-3 py-1 rounded hover:bg-gray-400">Today</button>
+      <button onclick="applyFilter('week')" class="btn-filter bg-gray-300 px-3 py-1 rounded hover:bg-gray-400">This Week</button>
+      <button onclick="applyFilter('month')" class="btn-filter bg-gray-300 px-3 py-1 rounded hover:bg-gray-400">This Month</button>
+      <input type="date" id="fromDate" class="border rounded px-2 py-1">
+      <input type="date" id="toDate" class="border rounded px-2 py-1">
+      <button onclick="applyCustom()" class="btn-filter bg-gray-300 px-3 py-1 rounded hover:bg-gray-400">Apply</button>
+    </div>
+
+    <!-- Summary + Progress -->
+    <div class="bg-white p-4 rounded shadow mb-6">
+      <p>Total Expense: ₹{{ total }}</p>
+      <p>Max Budget: ₹{{ budget }}</p>
+
+      {% set percent_used = percent_used or 0 %}
+      {% set color_class = 'bg-green-500' %}
+      {% if percent_used >= 90 %}
+        {% set color_class = 'bg-red-600' %}
+      {% elif percent_used >= 70 %}
+        {% set color_class = 'bg-yellow-400' %}
+      {% endif %}
+
+      <div class="bg-gray-200 rounded overflow-hidden h-6 mt-2">
+        <div class="h-full text-white text-center {{ color_class }} transition-all duration-500"
+             style="width: {{ percent_used | round(1) }}%;">
+          {{ percent_used | round(1) }}%
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Expense Form -->
+    <form method="POST" action="/add" class="bg-white p-4 rounded shadow mb-6 space-y-3">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <input type="text" name="title" placeholder="Title"
+               class="border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400" required>
+        <input type="number" name="amount" step="0.01" placeholder="Amount"
+               class="border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400" required>
+        <input type="text" name="category" placeholder="Category"
+               class="border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400" required>
+        <input type="date" name="date"
+               class="border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400" required>
+      </div>
+      <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+        Add Expense
+      </button>
+    </form>
+
+    <!-- Expenses Table -->
+    <div class="bg-white rounded shadow">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-4 py-2 text-left">Title</th>
+            <th class="px-4 py-2 text-left">Amount</th>
+            <th class="px-4 py-2 text-left">Category</th>
+            <th class="px-4 py-2 text-left">Date</th>
+            <th class="px-4 py-2 text-left">Action</th>
+          </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+          {% for e in expenses %}
+          <tr class="hover:bg-gray-100">
+            <td class="px-4 py-2">{{ e[1] }}</td>
+            <td class="px-4 py-2">₹{{ e[2] }}</td>
+            <td class="px-4 py-2">{{ e[3] }}</td>
+            <td class="px-4 py-2">{{ e[4] }}</td>
+            <td class="px-4 py-2">
+              <a href="/delete/{{ e[0] }}" class="text-red-500 hover:text-red-700">🗑️</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Charts -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+      <div class="bg-white p-4 rounded shadow">
+        <canvas id="pieChart"></canvas>
+      </div>
+      <div class="bg-white p-4 rounded shadow">
+        <canvas id="barChart"></canvas>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    function toggleDarkMode() {
+      document.body.classList.toggle('dark-mode');
+    }
+
+    function showToast(message) {
+      const t = document.getElementById('toast');
+      t.textContent = message;
+      t.classList.remove('hidden');
+      setTimeout(() => t.classList.add('hidden'), 3000);
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('added')) showToast('Expense added!');
+    if (params.get('deleted')) showToast('Expense deleted!');
+
+    function applyFilter(f) {
+      window.location = '/?filter=' + f;
+    }
+    function applyCustom() {
+      const from = document.getElementById('fromDate').value;
+      const to = document.getElementById('toDate').value;
+      window.location = `/?filter=custom&from=${from}&to=${to}`;
+    }
+
+    // Chart.js
+    const categoryLabels = {{ categories|tojson }};
+    const categoryData = {{ category_totals|tojson }};
+    new Chart(document.getElementById('pieChart'), {
+      type: 'pie',
+      data: {
+        labels: categoryLabels,
+        datasets: [{
+          data: categoryData,
+          backgroundColor: ['#4caf50','#fbc02d','#e53935','#2196f3','#ff9800']
+        }]
+      }
+    });
+
+    const dailyLabels = {{ daily_dates|tojson }};
+    const dailyData = {{ daily_sums|tojson }};
+    new Chart(document.getElementById('barChart'), {
+      type: 'bar',
+      data: {
+        labels: dailyLabels,
+        datasets: [{
+          label: 'Daily Total',
+          data: dailyData,
+          backgroundColor: '#3b82f6'
+        }]
+      }
+    });
+  </script>
+</body>
+</html>
